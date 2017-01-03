@@ -1,0 +1,33 @@
+//
+// Prefix header for all source files of the 'MeeMeepMobile' target in the 'MeeMeepMobile' project
+//
+
+//https://mel-000967/MeeMeep.RestAPI/v1
+
+//https://meemeep.unico-aus.unico.com.au/MeeMeep.RestAPI/v1
+
+//https://meemeep.unico-aus.unico.com.au/MeeMeep.RestAPI/v2
+
+//https://staging.meemeep.com/api/v2
+
+#import <Availability.h>
+
+// set M_DEBUG as a pre-processor macro definition under build settings
+// if not set application will log nothing
+#ifdef MM_DEBUG
+#    define DLog(...) NSLog(__VA_ARGS__)
+#else
+#    define DLog(...)
+#endif
+#define ALog(...) NSLog(__VA_ARGS__)
+
+
+#ifndef __IPHONE_3_0
+#warning "This project uses features only available in iOS SDK 3.0 and later."
+#endif
+
+#ifdef __OBJC__
+    #import <UIKit/UIKit.h>
+    #import <Foundation/Foundation.h>
+#endif
+

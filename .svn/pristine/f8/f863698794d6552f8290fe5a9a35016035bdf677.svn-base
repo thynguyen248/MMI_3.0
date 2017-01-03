@@ -1,0 +1,409 @@
+//
+//  BaseCommsViewController.m
+//  MeeMeepMobile
+//
+//  Created by Cameron McKenzie on 8/04/13.
+//
+//
+
+#import "BaseCommsViewController.h"
+
+#import "GUICommon.h"
+#import "MMCreateMessageAsyncActivity.h"
+#import "MMCreateMessageAsyncActivityResult.h"
+#import "MMRetrieveJobMessagesAsyncActivityResult.h"
+#import "MMRetrieveJobMessagesAsyncActivity.h"
+
+@interface BaseCommsViewController (Privates)
+-(void) setGradientForMessageBar;
+-(void) styleButtonColoured:(GradientButtonControl*) button;
+-(void) styleButtonGray:(GradientButtonControl*) button;
+-(void) sendMessageCompleted;
+-(void) showFailureDialog:(NSString *)message;
+-(void) resizeInputView:(BOOL) shrink keyboardHeight:(CGFloat) keyboardHeight animationTime:(NSTimeInterval) animationTime;
+-(void) registerForKeyboardNotifications;
+-(void) deRegisterForKeyboardNotifications;
+-(void) refreshData;
+-(NSString *) getTitle;
+-(NSInteger) getNumberOfRowsInSection:(NSInteger)section;
+-(NSInteger) getHeightForCellAtIndex:(NSIndexPath*)indexPath;
+-(UITableViewCell *) getCellForAtIndex:(NSIndexPath *)indexPath;
+-(void) cellSelectedAtIndex:(NSIndexPath *)indexPath;
+-(NSNumber*) getParentMessageID;
+
+@end
+
+@implementation BaseCommsViewController
+
+@synthesize messageBar;
+@synthesize inptMessage;
+@synthesize btnSend;
+@synthesize tableView;
+@synthesize btnCancel;
+@synthesize btnRefresh;
+
+- (id)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil
+{
+    self = [super initWithNibName:@"BaseCommsViewController" bundle:nibBundleOrNil];
+    if (self) {
+    }
+    return self;
+}
+
+-(id) initWithCommandObject: (id<GUIRestDeligate>) commandObj job:(MMJobDetail*) initJob {
+    if(self = [super init]) {
+        restDelegate = commandObj;
+        activityManagement = [[MMAsyncActivityManagementImpl alloc] init];
+        job = initJob;
+        [GUICommon setBackButton:self.navigationItem];
+        sendingMessage = false;
+    }
+    
+    return self;
+}
+
+-(id) initWithCommandObject: (id<GUIRestDeligate>) commandObj {
+    return nil;
+}
+
+-(void) viewDidLoad {
+    self.title = [self getTitle];
+    
+    btnRefresh = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh target:self action:@selector(btnRefreshClick:)];
+    self.navigationItem.rightBarButtonItem = btnRefresh;    
+    
+    //Round the corners of the text view
+    self.inptMessage.layer.cornerRadius = 5;
+    self.inptMessage.clipsToBounds = YES;
+    
+    [self styleButtonColoured:self.btnSend];
+    btnSend.enabled = FALSE;
+    
+    [self styleButtonGray:btnCancel];
+    [self setGradientForMessageBar];
+    
+    [super viewDidLoad];
+}
+
+-(void) viewWillAppear:(BOOL)animated {
+    [self registerForKeyboardNotifications];
+    
+
+    [self refreshData];
+    
+    [super viewWillAppear:animated];
+}
+
+-(void) viewWillDisappear:(BOOL)animated {
+    [self deRegisterForKeyboardNotifications];
+    
+    [self.inptMessage resignFirstResponder];
+    
+    [super viewWillDisappear:animated];
+}
+
+-(void) refreshData {
+    loadingMessages = true;
+    
+    [activityManagement dispatchMMAsyncActivity:[[MMRetrieveJobMessagesAsyncActivity alloc]
+                                                 initWithActivityDelegate:self restDelegate:restDelegate jobId:job.jobId]];
+}
+
+- (void) updateDataMessages:(NSArray *)newMessages {
+    NSArray* sortedMessages = [self groupMessages:newMessages];
+    
+    @synchronized (messages) {
+        messages = sortedMessages;
+        
+        loadingMessages=false;
+        [tableView reloadData];
+        if(messages != nil && [messages count] > 0) {
+            NSIndexPath* indexPath = [NSIndexPath indexPathForRow:([self getNumberOfRowsInSection:0] - 1) inSection:0];
+            [tableView scrollToRowAtIndexPath:indexPath atScrollPosition:UITableViewScrollPositionBottom animated:YES];
+        }
+        
+        [loadingDialog removeView];
+    }
+}
+
+-(void) sendMessageCompleted {
+    sendingMessage = false;
+    self.inptMessage.text = nil;
+    [self.btnSend setEnabled:FALSE];
+    [self.inptMessage resignFirstResponder];
+    
+    [self refreshData];
+}
+
+-(NSArray*) groupMessages:(NSArray*)newMessages {    
+    //Root Message ID => List of messages (Root message first)
+    NSMutableArray* messageGroups = [[NSMutableArray alloc] init];
+    for(MMMessageDetail* detail in newMessages) {
+        NSMutableArray* messagesForGroup = nil;
+        //Root message
+        if(detail.parentMessageId == nil) {
+            messagesForGroup = [[NSMutableArray alloc] init];
+            [messageGroups addObject:messagesForGroup];
+        } else {
+            for(NSMutableArray* mg in messageGroups) {
+                MMMessageDetail* md = [mg objectAtIndex:0];
+                if([md.messageId isEqualToNumber:detail.parentMessageId]) {
+                    messagesForGroup = mg;
+                    break;
+                }
+            }
+        }
+        
+        if(messagesForGroup != nil) {
+            [messagesForGroup addObject:detail];
+        }
+    }
+    
+    return messageGroups;
+}
+
+-(void) styleButtonColoured:(GradientButtonControl*) button {
+    NSArray* normalColors = [GUICommon MeeMeepActionButtonGradient];
+    NSArray* highlightedColors =  [GUICommon MeeMeepActionButtonGradientHighlighted];
+    NSArray* disabledColors = [GUICommon MeeMeepButtonGradientGray];
+    [button setGradientColor:normalColors forState:UIControlStateNormal];
+    [button setGradientColor:highlightedColors forState:UIControlStateHighlighted];
+    [button setGradientColor:disabledColors forState:UIControlStateDisabled];
+}
+
+-(void) styleButtonGray:(GradientButtonControl*) button {
+    NSArray* normalColors = [GUICommon MeeMeepButtonGradientGray2];
+    NSArray* highlightedColors =  [GUICommon MeeMeepButtonGradientGray];
+    NSArray* disabledColors = [GUICommon MeeMeepButtonGradientGray];
+    [button setGradientColor:normalColors forState:UIControlStateNormal];
+    [button setGradientColor:highlightedColors forState:UIControlStateHighlighted];
+    [button setGradientColor:disabledColors forState:UIControlStateDisabled];
+}
+
+-(void) setGradientForMessageBar {
+    CAGradientLayer *gradient = [CAGradientLayer layer];
+    gradient.frame = messageBar.frame;
+    gradient.colors = [GUICommon MeeMeepButtonGradientGrayBar];
+    [messageBar.layer insertSublayer:gradient atIndex:0];
+}
+
+-(void) resizeInputView:(BOOL) shrink keyboardHeight:(CGFloat) keyboardHeight animationTime:(NSTimeInterval) animationTime {
+    CGRect messageBarFrame = messageBar.frame;
+    
+    if(shrink) {
+        messageBarFrame.origin.y = tableView.frame.origin.y + tableView.frame.size.height;
+        messageBarFrame.size.height = self.view.frame.size.height - messageBarFrame.origin.y;
+    } else {
+        messageBarFrame.origin.y = 0.0f;
+        messageBarFrame.size.height = self.view.frame.size.height - keyboardHeight + self.navigationController.tabBarController.tabBar.frame.size.height;
+    }
+    
+    if(shrink) {
+        //Move the send button back, removing the cancel button will happen
+        //when the animation finished below
+        self.btnSend.frame = self.btnCancel.frame;
+        self.btnRefresh.enabled = TRUE;
+    } else {
+        //Move the send button to the bottom, add the cancel to the top
+        CGRect sendBtnFrame = self.btnSend.frame;
+        CGRect cancelBtnFrame = sendBtnFrame;
+        
+        sendBtnFrame.origin.y = messageBarFrame.size.height - sendBtnFrame.size.height - sendBtnFrame.origin.y;
+
+        btnSend.frame = sendBtnFrame;
+        btnCancel.frame = cancelBtnFrame;
+        [self.messageBar addSubview:self.btnCancel];
+        self.btnRefresh.enabled = FALSE;
+    }
+
+    [UIView animateWithDuration:animationTime
+                     animations:^{
+                         messageBar.frame = messageBarFrame;
+                     }
+                     completion:^(BOOL finished){
+                         if(shrink) {
+                            [self.btnCancel removeFromSuperview];
+                         }
+                     }];
+}
+
+-(IBAction) sendButtonPressed:(id)sender {
+    if(!sendingMessage)
+    {
+        sendingMessage = true;
+        MMMessageDetail* message = [[MMMessageDetail alloc] init];
+        message.jobId = job.jobId;
+        message.userId = [[restDelegate getAccessToken] userId];
+        message.content = inptMessage.text;
+        
+        message.parentMessageId = [self getParentMessageID];
+        
+        [activityManagement dispatchMMAsyncActivity:[[MMCreateMessageAsyncActivity alloc]
+                                                     initWithActivityDelegate:self restDelegate:restDelegate messageToCreate:message]];
+    }
+}
+
+-(IBAction) cancelButtonPressed:(id)sender {
+    if(!sendingMessage)
+    {
+        self.inptMessage.text = nil;
+        [self.btnSend setEnabled:FALSE];
+        [self.inptMessage resignFirstResponder];
+    }
+}
+
+-(IBAction)btnRefreshClick :(id)sender {
+    loadingDialog = [[LoadingView alloc] loadingViewInView:self.view];
+    [self refreshData];
+}
+
+-(void) showAlertOnFailure:(NSString*)message {
+    sendingMessage = false;
+    [loadingDialog removeView];
+    
+    UIAlertView *alertView = [[UIAlertView alloc]
+                              initWithTitle:@"Whoops!"
+                              message:message
+                              delegate:self cancelButtonTitle:@"Ok" otherButtonTitles:nil];
+    [alertView show];
+}
+
+#pragma mark - UIAlertViewDelegate
+- (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
+    if(loadingMessages) {
+        loadingMessages = false;
+        [self.navigationController popViewControllerAnimated:YES];
+    } else {
+        [tableView reloadData];        
+    }
+}
+
+#pragma Keyboard related methods
+
+- (void) registerForKeyboardNotifications {
+    
+    DLog(@"Registering for keyboard notifications...");
+    NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+    
+    [notificationCenter addObserver:self selector:@selector(keyboardWasShown:) name:UIKeyboardWillShowNotification object:nil];
+    
+    [notificationCenter addObserver:self selector:@selector(keyboardWasHidden:) name:UIKeyboardWillHideNotification object:nil];
+}
+
+- (void) deRegisterForKeyboardNotifications {
+    
+    DLog(@"Deregistering for keyboard notifications...");
+    NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+    
+    [notificationCenter removeObserver:self name:UIKeyboardWillShowNotification object:nil];
+    [notificationCenter removeObserver:self name:UIKeyboardWillHideNotification object:nil];
+}
+
+- (void)keyboardWasShown:(NSNotification*)notification {
+    NSDictionary* info = [notification userInfo];
+    CGSize kbSize = [[info objectForKey:UIKeyboardFrameBeginUserInfoKey] CGRectValue].size;
+    NSTimeInterval keyboardAnimationTime = [GUICommon getKeyboardAnimationTime:notification];
+    
+    [self resizeInputView:FALSE keyboardHeight:kbSize.height animationTime:keyboardAnimationTime];
+}
+
+- (void)keyboardWasHidden:(NSNotification*)notification {
+    NSDictionary* info = [notification userInfo];
+    CGSize kbSize = [[info objectForKey:UIKeyboardFrameBeginUserInfoKey] CGRectValue].size;
+    NSTimeInterval keyboardAnimationTime = [GUICommon getKeyboardAnimationTime:notification];    
+    
+    [self resizeInputView:TRUE keyboardHeight:kbSize.height animationTime:keyboardAnimationTime];
+}
+
+#pragma UITableView methods
+
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    if(loadingMessages || messages == nil) {
+        return 0;
+    }
+    
+    @synchronized (messages) {
+        return [self getNumberOfRowsInSection:section];
+    }
+}
+
+-(CGFloat)tableView:(UITableView *)theTableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if(loadingMessages) {
+        return 0;
+    }
+    
+    return [self getHeightForCellAtIndex:indexPath];
+}
+
+-(UITableViewCell *)tableView:(UITableView *)theTableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    @synchronized (messages) {
+        return [self getCellForAtIndex:indexPath];
+    }
+}
+
+-(void) tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [self.inptMessage resignFirstResponder];
+    
+    [self cellSelectedAtIndex:indexPath];
+}
+
+#pragma TextView delegate methods
+
+-(BOOL)textView:(UITextView *)textView shouldChangeTextInRange:(NSRange)range replacementText:(NSString *)text {
+    if(textView == inptMessage) {
+        //if(!loadingMessages) {
+        [self textViewDidChange:inptMessage];
+        //}
+    }
+    return true;
+}
+
+-(void)textViewDidChange:(UITextView *)textView {
+    [self.btnSend setEnabled:textView.text != nil && textView.text.length > 0];
+}
+
+#pragma Asynch methods
+
+- (void) onAsyncActivityCompletion:(id<MMAsyncActivityResult>) result {
+    if (result != nil) {
+        if ([result isKindOfClass:[MMCreateMessageAsyncActivityResult class]]) {
+            [self performSelectorOnMainThread:@selector(sendMessageCompleted) withObject:nil waitUntilDone:NO];
+        } else if ([result isKindOfClass:[MMRetrieveJobMessagesAsyncActivityResult class]]) {
+            MMRetrieveJobMessagesAsyncActivityResult *retrieveResult = (MMRetrieveJobMessagesAsyncActivityResult*) result;
+            [self performSelectorOnMainThread:@selector(updateDataMessages:) withObject:retrieveResult.messages waitUntilDone:NO];
+        }
+    }
+}
+
+- (void) onAsyncActivityFailure:(NSError *) error {
+    [self performSelectorOnMainThread:@selector(showAlertOnFailure:) withObject:[error localizedDescription] waitUntilDone:NO];
+}
+
+#pragma Abstract methods
+
+-(NSString *) getTitle {
+    @throw [NSException exceptionWithName:NSInvalidArgumentException reason:@"Not implemented" userInfo:nil];
+}
+
+-(NSInteger) getNumberOfRowsInSection:(NSInteger)section {
+    @throw [NSException exceptionWithName:NSInvalidArgumentException reason:@"Not implemented" userInfo:nil];
+}
+
+-(NSInteger) getHeightForCellAtIndex:(NSIndexPath*)indexPath {
+    @throw [NSException exceptionWithName:NSInvalidArgumentException reason:@"Not implemented" userInfo:nil];        
+}
+
+-(UITableViewCell *) getCellForAtIndex:(NSIndexPath *)indexPath {
+    @throw [NSException exceptionWithName:NSInvalidArgumentException reason:@"Not implemented" userInfo:nil];        
+}
+
+-(void) cellSelectedAtIndex:(NSIndexPath *)indexPath {
+    @throw [NSException exceptionWithName:NSInvalidArgumentException reason:@"Not implemented" userInfo:nil];
+}
+
+-(NSNumber*) getParentMessageID {
+    @throw [NSException exceptionWithName:NSInvalidArgumentException reason:@"Not implemented" userInfo:nil];
+}
+
+@end

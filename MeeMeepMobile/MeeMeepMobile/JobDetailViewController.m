@@ -1,0 +1,794 @@
+//
+//  JobDetailViewController.m
+//  MeeMeepMobile
+//
+//  Created by Aydan Bedingham on 1/03/12.
+//  Copyright (c) 2012 Unico Computer Systems. All rights reserved.
+//
+
+#import "JobDetailViewController.h"
+
+#import "MMAsyncActivityManagementImpl.h"
+#import "MMRetrieveJobDetailActivityResult.h"
+#import "MMRetrieveJobDetailAsyncActivity.h"
+#import "MMRetrieveBidSummaryListActvityResult.h"
+#import "MMRetrieveBidSummaryAsyncActivity.h"
+#import "BidDetailViewController.h"
+#import "MMCompositeAsyncActivity.h"
+#import "MMRestClient.h"
+#import "MMConfig.h"
+#import "MMCompleteJobAsyncActivity.h"
+#import "MMCompleteJobAsyncActivityResult.h"
+
+@implementation JobDetailViewController
+
+@synthesize detailTableView;
+@synthesize activityManagement;
+
+@synthesize btnViewOnWebsite;
+
+NSString * const NoCreditCardDetailsAlertTitle = @"Next Step";
+
+NSString * const BidOnJobTitle = @"Place a Quote";
+NSString * const ViewBidTitle = @"View Quote";
+NSString * const CompleteJobTitle = @"Complete";
+NSString * const MarkAsCompleteTitle = @"Mark as Complete";
+NSString * const SignInTitle = @"Sign in to Quote";
+
+-(void) openMapAppWithLocation:(MMLocation*) location {
+    if(_mapView == nil || _mapViewController == nil)
+    {
+        _mapView = [[MKMapView alloc] initWithFrame:self.view.frame];
+        _mapViewController = [[UIViewController alloc] init];
+        
+        _mapPin = [[GMMapAnnotation alloc] init];
+        [_mapView addAnnotation:_mapPin];
+        
+        [_mapViewController setView:_mapView];
+    }
+    
+    DLog(@"Showing coordinate: %f, %f", location.coordinate.latitude, location.coordinate.longitude);
+    
+    _mapPin.coordinate = location.coordinate;
+    
+    MKCoordinateRegion region = MKCoordinateRegionMakeWithDistance(location.coordinate, 2500, 2500);
+    [_mapView setRegion:region animated:YES];
+    
+    [_mapViewController setTitle:location.address];
+    
+    [self.navigationController pushViewController:_mapViewController animated:TRUE];
+}
+
+-(IBAction)onBtnActionsClick:(id)sender {
+    NSString* btnTitle = btnActions.title;
+    
+    if (![restDeligate isLoggedIn] || [btnTitle isEqualToString:SignInTitle])
+    {
+        // need to log in
+        [restDeligate showLoginDialog:0];
+        [restDeligate setShouldUpdateMyJobs:true];
+        [restDeligate setShouldUpdateJobDetail:true];
+    }
+    else if([btnTitle isEqualToString:BidOnJobTitle])
+    {
+        // bid on job
+        MMUserProfile* user = [restDeligate getUserProfile];
+        if(user && user.hasBankDetails)
+        {
+            // TP needs bank details to bid so the job money can be transferred to them
+            CreateBidViewController* newView = [[CreateBidViewController alloc] initWithCommandObject:restDeligate job:job];
+            [self.navigationController pushViewController:newView animated:true];
+        }
+        else
+        {
+            // You must have a credit card on file to accept a bid
+            UIAlertView *alertView = [[UIAlertView alloc] initWithTitle:NoCreditCardDetailsAlertTitle message:@"We need you to enter your bank details on the website. Please tap below to open in Safari.\nWhen you're done, please come back to the app." delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"Open Safari", nil];
+            [alertView show];
+        }
+    }
+    else if([btnTitle isEqualToString:CompleteJobTitle])
+    {
+        MMRestAccessToken* accessToken = [restDeligate getAccessToken];
+        if([GUICommon isOwnerOfJob:job accessToken:accessToken])
+        {
+            // show job owner complete & rate job
+            CompleteJobViewController* newView = [[CompleteJobViewController alloc] initWithJob:restDeligate job:job];
+            [self.navigationController presentModalViewController:newView animated:true];
+        }
+        else if ([GUICommon isWinningBidderOfJob:job accessToken:accessToken])
+        {
+            // show winning bidder action sheet to simply complete job without rating
+            [actionSheet showInView:[restDeligate getWindow]];
+        }
+    }
+    else if([btnTitle isEqualToString:ViewBidTitle])
+    {
+        BidDetailViewController* newView = [[BidDetailViewController alloc] initWithBidId:restDeligate bidId:job.myBidId job:job];
+        [self.navigationController pushViewController:newView animated:true];
+    }
+}
+
+-(void) actionSheet:(UIActionSheet *)actionSheet clickedButtonAtIndex:(NSInteger)buttonIndex{
+    DLog(@"Mark as complete");
+    
+    loadingDialog = [[LoadingView alloc] loadingViewInView:self.view];
+    
+    MMCompleteJobAsyncActivity* activity = [[MMCompleteJobAsyncActivity alloc] initWithActivityDelegate:self
+                                                                                           restDelegate:restDeligate
+                                                                                                 jobId:job.jobId];
+    
+    [activityManagement dispatchMMAsyncActivity:activity];
+}
+
+-(void) jobCompletedSuccess {
+    [loadingDialog removeView];
+    
+    UIAlertView *alertView = [[UIAlertView alloc] initWithTitle:@"Done!" message:@"Job successfully marked as Complete." delegate:self cancelButtonTitle:@"Ok" otherButtonTitles:nil];
+    [alertView show];
+    
+    [self refreshJobDetail];
+}
+
+-(void) refreshJobDetail{
+    loadingData = true;
+    loadingDialog = [[LoadingView alloc] loadingViewInView:self.view];
+
+    [self.activityManagement dispatchMMAsyncActivity:[[MMRetrieveJobDetailAsyncActivity alloc] initWithActivityDelegate:self restDelegate:restDeligate jobIdToRetrieve:myJobId]];
+}
+
+-(IBAction) btnViewBidsClick{
+    //Go to bids view controller (shows bid summaries)
+    BidsViewController* newView = [[BidsViewController alloc] initWithJob:restDeligate job:job];
+    [self.navigationController pushViewController:newView animated:YES];    
+}
+
+-(IBAction) btnViewJobOnlineClick{
+    //Open webpage link to job on meemeep site
+    NSString* urlString = [baseUrl stringByAppendingPathComponent:@"public/job/show"];
+    urlString = [urlString stringByAppendingPathComponent:[job.jobId stringValue]];
+    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:urlString]];
+}
+
+-(id) initWithCommandObject: (id<GUIRestDeligate>) commandObj {
+    if(self = [super init]) {
+        restDeligate = commandObj;
+        self.activityManagement = [[MMAsyncActivityManagementImpl alloc] init];
+        job = [[MMJobDetail alloc] init];
+        [GUICommon setBackButton:self.navigationItem];
+    }
+    return self;
+}
+
+-(id) initWithDelegate: (id<GUIRestDeligate>) commandObj andJobId: (NSNumber*) jobId {
+    if(self = [self initWithCommandObject:commandObj]) {
+        myJobId = jobId;
+        baseUrl = [[restDeligate getRestClient] getBaseUrl];
+    }
+    
+    return self;
+}
+
+- (id)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil
+{
+    self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
+    if (self) {
+        // Custom initialization
+        [GUICommon setBackButton:self.navigationItem];
+    }
+    return self;
+}
+
+- (void)didReceiveMemoryWarning
+{
+    // Releases the view if it doesn't have a superview.
+    [super didReceiveMemoryWarning];
+    
+    // Release any cached data, images, etc that aren't in use.
+}
+
+#pragma mark - View lifecycle
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    
+    [self setTitle:@""];
+    
+    
+    
+    [self refreshJobDetail];
+ 
+    //Create and style actions button
+    btnActions = [[UIBarButtonItem alloc] initWithTitle:@"Actions" style:UIBarButtonItemStyleBordered target:self action:@selector(onBtnActionsClick:)];
+    actionSheet = [GUICommon createActionSheetWithActions:[NSArray arrayWithObject:MarkAsCompleteTitle] delegate:self];
+    [GUICommon styleActionButton:btnActions];
+}
+
+-(void) viewDidAppear:(BOOL)animated{
+    [super viewDidAppear:animated];
+    
+    if ([restDeligate getShouldUpdateJobDetail])
+    {
+        [self refreshJobDetail];
+        [restDeligate setShouldUpdateJobDetail:FALSE];
+    }
+}
+
+- (void)viewDidUnload
+{
+    [super viewDidUnload];
+    // Release any retained subviews of the main view.
+    // e.g. self.myOutlet = nil;
+}
+
+- (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)interfaceOrientation
+{
+    // Return YES for supported orientations
+    return (interfaceOrientation == UIInterfaceOrientationPortrait);
+}
+
+
+#pragma mark - Async
+
+- (void) updateJobDetails:(MMJobDetail*)jobDetail {
+    @synchronized (job) {
+        job = jobDetail;
+        [self setTitle:job.title];
+    }
+}
+
+-(void) finishLoading {
+    DLog(@"Finish Loading");
+    loadingData = false;
+    [detailTableView reloadData];
+    [btnViewOnWebsite setHidden:false];
+    
+    NSString* buttonName = nil;
+    
+    if (![restDeligate isLoggedIn]){
+        buttonName = SignInTitle;
+    }
+    else
+    {
+        MMUserProfile* user = [restDeligate getUserProfile];
+        MMRestAccessToken* accessToken = [restDeligate getAccessToken];
+        bool isJobOwner = [GUICommon isOwnerOfJob:job accessToken:accessToken];
+        bool isWinningBidder = [GUICommon isWinningBidderOfJob:job accessToken:accessToken];
+        bool isTransportProvider = user.isTransportProvider;
+        
+        switch (job.jobStatus.status) {
+            case JOB_CREATED:
+                if(!isJobOwner && isTransportProvider) {
+                    // Can bid if not the owner and is a TP
+
+                    if(job.myBidId == nil) {
+                        buttonName = BidOnJobTitle;
+                    } else {
+                        buttonName = ViewBidTitle;
+                    }
+                }
+                break;
+            case BID_ACCEPTED:
+                if(isJobOwner || isWinningBidder)
+                {
+                    // Can complete if owner or winning bidder
+                    buttonName = CompleteJobTitle;
+                }
+                break;
+            case AWAITING_CUSTOMER_COMPLETION:
+                if(isJobOwner)
+                {
+                    // Owner still to complete
+                    buttonName = CompleteJobTitle;
+                }
+                break;
+            default:
+                // No button to display
+                break;
+        }
+    }
+    
+    if(buttonName != nil) {
+        btnActions.title = buttonName;
+        self.navigationItem.rightBarButtonItem = btnActions;
+    } else {
+        self.navigationItem.rightBarButtonItem = nil;
+    }
+    
+    [loadingDialog removeView];
+}
+
+- (void) showAlertOnFailureToRetrieveJob: (NSString*) message{
+    [loadingDialog removeView];
+    
+    failureToLoadJobsAlertView = [[UIAlertView alloc] initWithTitle:@"Whoops!" message:@"We were unable to contact MeeMeep. Please check your connection settings, or try again." delegate:self cancelButtonTitle:@"Ok" otherButtonTitles:nil];
+    [failureToLoadJobsAlertView show];
+
+    loadingData = false;
+}
+
+#pragma mark - UIAlertViewDelegate
+
+- (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
+    //When the user dismisses the dialog we want to pop the view controller.
+    if(alertView == failureToLoadJobsAlertView) {
+        [self.navigationController popViewControllerAnimated:YES];
+        failureToLoadJobsAlertView = nil;
+    } else if([alertView.title isEqualToString:NoCreditCardDetailsAlertTitle]) {
+        switch (buttonIndex) {
+            case 0:
+                // Cancel
+                // Do nothing
+                break;
+            case 1:
+                // View Website
+                [GUICommon openUserPaymentDetailsWebsite:restDeligate];
+                break;
+        }
+    }
+}
+
+#pragma mark - async handling methods
+
+- (void) onAsyncActivityFailure:(NSError *)error {
+    [self performSelectorOnMainThread:@selector(showAlertOnFailureToRetrieveJob:) withObject:[error localizedDescription] waitUntilDone:NO];
+}
+
+- (void) onAsyncActivityCompletion:(id<MMAsyncActivityResult>)result {    
+    if (result != nil) {
+        DLog(@"Result class: %@", [result class]);
+        if([result isKindOfClass:[MMRetrieveJobDetailActivityResult class]])
+        {
+            DLog(@"MMRetrieveJobDetailActivityResult");
+            MMRetrieveJobDetailActivityResult *detailResult = (MMRetrieveJobDetailActivityResult *) result;
+            [self performSelectorOnMainThread:@selector(updateJobDetails:) withObject:detailResult.retrievedDetail waitUntilDone:YES];
+            
+            // finished loading all results
+            [self performSelectorOnMainThread:@selector(finishLoading) withObject:nil waitUntilDone:YES];
+        }
+        else if([result isKindOfClass:[MMCompleteJobAsyncActivityResult class]])
+        {
+            [self performSelectorOnMainThread:@selector(jobCompletedSuccess) withObject:nil waitUntilDone:YES];
+        }
+    }
+}
+
+
+#pragma mark - Table view data source
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
+{
+    int cellForBidsMessages = 0;
+    if([self showBidsMessagesSection]) {
+        ++cellForBidsMessages;
+    }
+    
+    if(job.specialConsiderations != nil && [job.specialConsiderations count] > 0)
+    {
+        return 3 + cellForBidsMessages;
+    }
+    return 2 + cellForBidsMessages;
+}
+
+
+-(CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath{
+    switch ([self getSectionFromIndex:indexPath.section]) {
+        case SectionDetails:
+            return 45;
+        case SectionMessagesBids:
+            return 44;
+        case SectionItems:
+            return 50;
+        case SectionSpecialCons:
+        {
+            //Guess how big the cell
+            NSInteger minCellHeight = 45;
+            NSString* text = [GUICommon specialInformationStringForJobDetail:job];
+            
+            NSInteger yPosOfText = 18; //TextViewY + 3px padding + jeggings
+            NSInteger textHeight = [GUICommon heightOfText:text WithFont:[UIFont systemFontOfSize:14] ConstrainedToWidth:tableView.frame.size.width - 15];
+            NSInteger cellHeight = yPosOfText + textHeight;
+            if (cellHeight > minCellHeight)
+            {
+                return cellHeight;
+            }
+            else
+            {
+                return minCellHeight;
+            }
+        }
+    }
+    return 45;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
+    switch ([self getSectionFromIndex:section]) {
+        case SectionDetails:
+            return 60.0f;
+        case SectionItems:
+            return 35.0f;
+        default:
+            return 0.0f;
+    }
+    return 0.0f;
+}
+
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
+    int height = [self tableView:tableView heightForHeaderInSection:section];
+    
+    if(height <= 0)
+    {
+        return [[UIView alloc] initWithFrame:CGRectZero];
+    }
+    
+    NSString *sectionTitle = [self tableView:tableView titleForHeaderInSection:section];
+    
+    // Create label with section title
+    UILabel *label = [[UILabel alloc] init];
+    label.frame = CGRectMake(20, 6, 300, height);
+    label.backgroundColor = [UIColor clearColor];
+    label.textColor = [GUICommon MeeMeepHeadingText];
+    
+    label.font = [UIFont boldSystemFontOfSize:16];
+    label.text = sectionTitle;
+    label.numberOfLines = 2;
+    
+    // Create header view and add label as a subview
+    UIView *view = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, height)];
+    [view addSubview:label];
+    
+    return view;
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section{
+    if(!loadingData)
+    {
+        switch ([self getSectionFromIndex:section]) {
+            case SectionDetails:
+                return [GUICommon formatForString:job.title];
+            case SectionItems:
+                return @"Items";
+            default:
+                return @"";
+        }
+        
+    }
+    return @"";
+}
+
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    switch ([self getSectionFromIndex:section]) {
+        case SectionDetails:
+            return 5;
+        case SectionMessagesBids:
+            if([self showBidsMessagesSection] && !loadingData)
+            {
+                return 1;
+            }
+            return 0;
+        case SectionItems:
+            if(job.items == nil)
+            {
+                return 0;
+            }
+            return [job.items count];
+        case SectionSpecialCons:
+            return 1;
+    }
+    return 0;
+}
+
+
+- (UITableViewCell *)tableView:(UITableView *)tableView 
+         cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    UITableViewCell* cell; 
+    
+    DLog(@"Updating tableView at section %d and row %d", indexPath.section, indexPath.row);
+    
+    @synchronized (job)
+    {
+        switch ([self getSectionFromIndex:indexPath.section])
+        {
+            case SectionDetails:
+                {
+                    NSString* key;
+                    NSString* value = @"";
+                    
+                    StyledKeyValueTableViewCell* myCell = [GUICommon getStyledKeyValueTableViewCell:tableView];
+                    [myCell setSelectionStyle:UITableViewCellSelectionStyleNone];
+                    [myCell setUserInteractionEnabled:NO];
+                    
+                    MMLocation* location;
+                    switch (indexPath.row) {
+                        case 0:
+                            location = job.fromLocationDetailed == nil ? job.fromLocation : job.fromLocationDetailed;
+                            if(location.hasCoord)
+                            {
+                                [myCell setUserInteractionEnabled:YES];
+                                [myCell setAccessoryType:UITableViewCellAccessoryDisclosureIndicator];
+                            }
+                            key = @"From";
+                            value = [GUICommon formatForString:location.address];
+                            break;
+                        case 1:
+                            location = job.toLocationDetailed == nil ? job.toLocation : job.toLocationDetailed;
+                            if(location.hasCoord)
+                            {
+                                [myCell setUserInteractionEnabled:YES];
+                                [myCell setAccessoryType:UITableViewCellAccessoryDisclosureIndicator];
+                            }
+                            key = @"To:";
+                            value = [GUICommon formatForString:location.address];
+                            break;
+                        case 2:
+                            key = @"Approx. Distance";
+                            if(job.distance != nil)
+                            {
+                                value = [NSString stringWithFormat:@"%@ km", [GUICommon formatNumber:job.distance withRounding:0]];
+                            }
+                            break;
+                        case 3:
+                        {
+                            key = @"Preferred pick up";
+                            if(job.pickupDate != nil)
+                            {
+                                NSString* date = [GUICommon formatDate:job.pickupDate];
+                                if(job.pickupTime != nil)
+                                {
+                                    value = [NSString stringWithFormat:@"%@ %@", date, job.pickupTime];
+                                }
+                                else
+                                {
+                                    value = date;
+                                }
+                            }
+                            else if (!loadingData)
+                            {
+                                value = @"Flexible";
+                            }
+                        }
+                            break;
+                        case 4:
+                            key = @"Preferred drop off";
+                            if(job.deliveryDate != nil)
+                            {
+                                NSString* date = [GUICommon formatDate:job.deliveryDate];
+                                if(job.deliveryTime != nil)
+                                {
+                                    value = [NSString stringWithFormat:@"%@ %@", date, job.deliveryTime];
+                                }
+                                else
+                                {
+                                    value = date;
+                                }
+                            }
+                            else if (!loadingData)
+                            {
+                                value = @"Flexible";
+                            }
+                            break;
+                    }
+                    [myCell setupCellWithKey:key andValue:value andValuePlaceHolder:@"" isEditable:NO];
+                    cell = myCell;
+                }
+                break;
+            case SectionMessagesBids:
+                if (!loadingData && [self showBidsMessagesSection])
+                {
+                    MMRestAccessToken* accessToken = [restDeligate getAccessToken];
+                    BOOL showMessagesButton = [job.jobStatus is:JOB_CREATED]
+                                            || [GUICommon isOwnerOfJob:job accessToken:accessToken]
+                                            || [GUICommon isWinningBidderOfJob:job accessToken:accessToken];
+                    
+                    BidsMessagesLinkerTableViewCell* myCell = [GUICommon getBidsMessagesLinkerTableViewCell:tableView];
+                    [myCell setupCellWithBidsButtonAndMessageButton:showMessagesButton withDelegate:self];
+                    cell = myCell;
+                    
+                }
+                else
+                {
+                    // shouldnt actually see this, but just in case
+                    cell = [GUICommon getMyTableViewCell:tableView];
+                }
+                break;
+            case SectionItems:
+                {
+                    DLog(@"Updating job item");
+                    if(job.items == nil || [job.items count] == 0)
+                    {
+                        // shouldnt see this, but just in case
+                        return [GUICommon getMyTableViewCell:tableView];
+                    }
+                    MMJobItem* item = [job.items objectAtIndex:indexPath.row];
+                    JobItemSummaryTableViewCell* myCell = [GUICommon getJobItemSummaryTableViewCell:tableView];
+                    [myCell populate:item];
+                    
+                    [myCell setUserInteractionEnabled:(item.photoId != nil)];
+                    
+                    cell = myCell;
+                }
+                break;
+            case SectionSpecialCons:
+                {
+                    StyledKeyValueMultilineTableViewCell* myCell = [GUICommon getStyledKeyValueMultilineTableViewCell:tableView];
+                    
+                    NSString* specCons = [GUICommon specialInformationStringForJobDetail:job];
+                    
+                    [myCell setupCellWithKey:@"Special Considerations" andValue:specCons isEditable:NO];
+                    [myCell setSelectionStyle:UITableViewCellSelectionStyleNone];
+                    [myCell setUserInteractionEnabled:NO];
+                    
+                    cell = myCell;
+                }
+                break;
+        }
+    }
+    
+
+    return cell;
+}
+
+#pragma mark - Table view delegate
+
+
+-(void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    
+    DLog(@"didSelectRow: %d : %d", indexPath.section, indexPath.row);
+    
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+
+    MMLocation* location;
+    switch ([self getSectionFromIndex:indexPath.section]) {
+        case SectionDetails:
+            if (indexPath.row == 0) {
+                location = job.fromLocationDetailed == nil ? job.fromLocation : job.fromLocationDetailed;
+            } else if (indexPath.row == 1) {
+                location = job.toLocationDetailed == nil ? job.toLocation : job.toLocationDetailed;
+            }
+            
+            if(location != nil && location.hasCoord) {
+                [self openMapAppWithLocation:location];
+            }
+            
+            break;
+        case SectionMessagesBids:
+            // this gets handled by the cell itself
+            break;
+        case SectionItems:
+            [self onItemClick:indexPath.row];
+            break;
+        case SectionSpecialCons:
+            break;
+    }
+}
+
+-(bool)showBidsMessagesSection {
+    if(![restDeligate isLoggedIn]) {
+        return false;
+    }
+    
+    switch(job.jobStatus.status) {
+        case AWAITING_CUSTOMER_COMPLETION:
+        case BID_ACCEPTED:
+        case JOB_CREATED:
+            return true;
+        default:
+            return false;
+    }
+    return false;
+}
+
+-(JobDetailSection) getSectionFromIndex:(NSInteger)index
+{
+    if (index == 0) {
+        return index;
+    } else {
+        return [self showBidsMessagesSection] ? index : index + 1;
+    }
+}
+
+-(void) onItemClick:(NSInteger)row
+{
+    // Items
+    NSInteger indexToDisplay = -1;
+    
+    if(photos == nil)
+    {
+        // First time clicked - create photos array
+        photos = [NSMutableArray array];
+        for (int i = 0; i < job.items.count; i++)
+        {
+            MMJobItem* item = [job.items objectAtIndex:i];
+            if(item.photoId != nil)
+            {
+                NSString* urlString = [baseUrl stringByAppendingPathComponent:@"public/item/showImage"];
+                urlString = [urlString stringByAppendingPathComponent:[item.photoId stringValue]];
+                
+                MWPhoto* photo = [MWPhoto photoWithURL:[NSURL URLWithString:urlString]];
+                photo.caption = item.description;
+                photo.refID = [NSNumber numberWithInt:i];
+                [photos addObject:photo];
+                
+                if(i == row)
+                {
+                    // we want to display the one just added
+                    indexToDisplay = [photos count] - 1;
+                }
+            }
+        }
+    }
+    else
+    {
+        // Previously clicked item
+        // Just need to determine which one they clicked this time to show
+        for(int i = 0; i < photos.count; i++)
+        {
+            MWPhoto* photo = [photos objectAtIndex:i];
+            if ([photo.refID isEqualToNumber:[NSNumber numberWithInt:row]])
+            {
+                indexToDisplay = i;
+                break;
+            }
+        }
+    }
+    
+    if(indexToDisplay == -1)
+    {
+        // Item doesn't have an image, do nothing
+        return;
+    }
+    
+    // https://github.com/mwaterfall/mwphotobrowser
+    
+    // Create & present browser
+    MWPhotoBrowser *browser = [[MWPhotoBrowser alloc] initWithDelegate:self];
+    
+    // Set options
+    browser.wantsFullScreenLayout = YES; // Decide if you want the photo browser full screen, i.e. whether the status bar is affected (defaults to YES)
+    browser.displayActionButton = YES; // Show action button to save, copy or email photos (defaults to NO)
+    [browser setInitialPageIndex:indexToDisplay];
+    
+    // Present
+    [self.navigationController pushViewController:browser animated:YES];
+}
+
+-(void) bidsMessagesLinkerCellDidTouchUpInsideBidsButton{
+    // Go to the bid detail screen on clicking the "Bids" tableview item
+    if ([restDeligate isLoggedIn])
+    {
+        BidsViewController* newView = [[BidsViewController alloc]
+                                       initWithJob:restDeligate job:job];
+        [self.navigationController pushViewController:newView animated:YES];
+    }
+}
+
+-(void) bidsMessagesLinkerCellDidTouchUpInsideMessagesButton {
+    // bidder will view comms between job owner and themself
+    //Display login view controller if necessary
+    if ([restDeligate isLoggedIn]==FALSE){
+        [restDeligate showLoginDialog:0];
+        [restDeligate setShouldUpdateMyJobs:true];
+        [restDeligate setShouldUpdateJobDetail:true];
+    } else {
+        CommunicationsViewController* vc = [[CommunicationsViewController alloc]
+                                            initWithCommandObject:restDeligate job:job];
+      
+        [self.navigationController pushViewController:vc animated:TRUE];
+    }
+}
+
+
+- (NSUInteger)numberOfPhotosInPhotoBrowser:(MWPhotoBrowser *)photoBrowser
+{
+    return photos.count;
+}
+- (id<MWPhoto>)photoBrowser:(MWPhotoBrowser *)photoBrowser photoAtIndex:(NSUInteger)index
+{
+    if (index < photos.count)
+        return [photos objectAtIndex:index];
+    return nil;
+}
+
+@end

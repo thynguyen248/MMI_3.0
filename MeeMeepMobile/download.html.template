@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+        <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" /> 
+        <title>Install @APP_NAME@ build #@BUILD_NUMBER@ (@ENVIRONMENT@)</title>
+        <style type="text/css">
+                body {
+                        background: url(bkg.png) repeat #c5ccd4;
+                        font-family: Helvetica, arial, sans-serif;
+                }
+                .step {
+                        background: white;
+                        border: 1px #ccc solid;
+                        border-radius: 14px;
+                        padding: 4px 10px;
+                        margin: 10px 0;
+                }
+                .instructions {
+                        font-size: 10pt;
+                }
+                .arrow {
+                        font-size: 15pt;
+                }
+                table {
+                        width: 100%;
+                }
+        </style>
+</head>
+<body>
+ 
+<div class="step">
+        <table><tr>
+                <td class="instructions">Install the<br />@APP_NAME@ app build #@BUILD_NUMBER@ in @ENVIRONMENT@</td>
+                <td width="24" class="arrow">&rarr;</td>
+                <td width="57" class="imagelink">
+                        <a href="itms-services://?action=download-manifest&url=@APP_DOWNLOAD_URL@/@APP_MANIFEST@">
+			Download
+                         </a>
+                </td>
+        </tr></table>
+</div>
+ 
+</body>
+</html>

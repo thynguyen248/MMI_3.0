@@ -1,0 +1,26 @@
+sign.identity.name=\"iPhone\ Developer:\ Greg\ Soertsz\ (RET78EFU6S)\"
+provisioning.profile.dir=./profiles
+provisioning.profile.filename=Adhoc_Provisioning_Profile.mobileprovision
+manifest.filename=meemeepmobile.plist
+#bundle.id=au.com.meemeep.MeeMeepMobile
+bundle.id=*
+bundle.version=2.2
+application.title=MeeMeep
+download.url=http://cassini/releases/ios/staging/latest
+#download.url=http://192.168.2.16/svn/ios/tags/latest
+upload.dir=/Users/gsoertsz/svnWorkspaces/release-web/release/latest
+
+meemeep.rest.client.url=https://staging.meemeep.com/api/v2
+
+# Distribution properties 
+
+distribution.publish.dir=/tmp/meemeep
+
+# Distribution properties for SCP (not used)
+
+distribution.scp.user=meemeepdev
+distribution.scp.password=welcome1
+distribution.scp.hostname=cassini
+distribution.scp.keyfile=/Users/gsoertsz/.ssh/id_dsa
+distribution.scp.targetdir=/Users/meemeepdev/MeeMeep/DropZone/release-web/ios/releases/latest
+distribution.scp.passphrase=

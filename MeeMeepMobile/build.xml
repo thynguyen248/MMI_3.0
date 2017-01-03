@@ -1,0 +1,204 @@
+<project name="MeeMeepMobile" basedir="." default="build-unittest">
+	
+	<property name="build.dir" location="${basedir}/build"/>
+	<property name="distribution.dir" location="${build.dir}/dist"/>
+
+	<property name="integration.environment" value="ci"/>
+
+	<target name="check-integration-environment-property-set" depends="">
+		<condition property="integration.environment.isset" value="true" else="false">
+			<isset property="integration.environment"/>
+		</condition>
+	</target>
+
+	<target name="configure-for-integration-environment" depends="check-integration-environment-property-set" if="integration.environment.isset">
+		<tstamp>
+			<format property="tstamp" pattern="HHmmssSSS"/>
+		</tstamp>
+		<!-- copy the mm-rest-conf.plist.${integration.environment} file to mm-rest-conf.plist -->	
+		<copy file="build.properties.${integration.environment}" tofile="build.properties" overwrite="true"/>
+	</target>
+
+	<target name="init-project-resources" depends="configure-for-integration-environment"> 
+		<!-- extract these properties into a config file! -->
+		<property file="build.properties"/>
+		<echoproperties/>
+	</target>
+
+	<target name="init" depends="init-project-resources">
+		<mkdir dir="${build.dir}"/>
+		<mkdir dir="${distribution.dir}"/>
+	</target>
+	
+	<!-- we need a target that will archive the current build app bundle -->
+	
+	<target name="build-unittest" depends="init, update-rest-configuration">
+		<!-- execute xcodebuild -->
+		<exec executable="xcodebuild" failonerror="true">
+			<arg line="SYMROOT=${build.dir}"/>
+			<arg line="-scheme MeeMeepLogicUnitTests"/>
+			<arg line="-configuration Debug"/>
+			<arg line="-sdk iphonesimulator"/>
+			<arg line="clean build"/>
+		</exec>
+	</target>
+
+	<target name="build-apptest" depends="init">
+		<exec executable="xcodebuild" failonerror="true">
+			<arg line="SYMROOT=${build.dir}"/>
+			<arg line="-scheme MeeMeepApplicationUnitTests"/>
+			<arg line="-configuration Debug"/>
+			<arg line="-sdk iphonesimulator"/>
+			<arg line="clean build"/>
+		</exec>
+	</target>
+	
+	<target name="build-dist" depends="init, update-rest-configuration">
+		<exec executable="xcodebuild" failonerror="true">
+			<arg line="SYMROOT=${build.dir}"/>
+			<arg line="-scheme MeeMeepMobile"/>
+			<arg line="-configuration Release"/>
+			<arg line="-sdk iphoneos"/>
+			<arg line="clean build"/>
+		</exec>
+	</target>
+
+	<target name="update-rest-configuration" depends="init" if="integration.environment.isset">
+		<tstamp>
+			<format property="tstamp" pattern="HHmmssSSS"/>
+		</tstamp>
+		<!-- there must always be a plist file in the project to satisfy xcode when it starts -->
+		<copy file="mm-rest-conf.plist" tofile="mm-rest-conf.plist.backup.${tstamp}" failonerror="false"/>
+		<copy file="mm-rest-conf.plist.template" tofile="mm-rest-conf.plist" overwrite="true">
+			<filterset>
+				<filter token="meemeep.rest.client.url" value="${meemeep.rest.client.url}"/>
+			</filterset>
+		</copy>
+	</target>
+
+	<target name="archive" depends="build-dist">
+		<exec executable="xcrun" failonerror="true">
+			<arg line="-sdk iphoneos"/>
+			<arg line="PackageApplication"/>
+			<arg line="${build.dir}/Release-iphoneos/${ant.project.name}.app"/>
+			<arg line="-o ${distribution.dir}/${ant.project.name}.ipa"/>
+			<arg line="--sign ${sign.identity.name}"/>
+			<arg line="--embed ${provisioning.profile.dir}/${provisioning.profile.filename}"/>
+			<arg line="-v"/>
+		</exec>
+	</target>
+	
+	<target name="_check-build-number-available" depends="init">
+		<condition property="buildnumber.available" value="true">
+			<!--<isset property="environment.BUILD_NUMBER"/>-->
+			<isset property="build.number"/>
+		</condition>
+		
+		<echo message="Build number available? ${buildnumber.available}"/>
+	</target>
+	
+	<target name="_update-dist-manifest" depends="init, _check-build-number-available" if="buildnumber.available">
+		<copy todir="${distribution.dir}">
+			<fileset dir="${basedir}">
+				<include name="${manifest.filename}.template"/>
+			</fileset>
+			<filterset>
+				<filter token="ENVIRONMENT" value="${integration.environment}"/>
+				<filter token="BUNDLE_ID" value="${bundle.id}"/>
+				<filter token="BUNDLE_VERSION" value="${bundle.version}"/>
+				<filter token="BUILD_NUMBER" value="${build.number}"/>
+				<filter token="URL" value="${download.url}"/>
+				<filter token="ARCHIVE_NAME" value="${ant.project.name}.ipa"/>
+				<filter token="APP_TITLE" value="${application.title}"/>
+				<filter token="APP_SUBTITLE" value="${ant.project.name}"/>
+			</filterset>
+			<globmapper from="*.template" to="*"/>
+		</copy>
+	</target>
+
+	<target name="_update-download-page" depends="init, _check-build-number-available" if="buildnumber.available">
+		<copy todir="${distribution.dir}">
+			<fileset dir="${basedir}">
+				<include name="download.html.template"/>
+			</fileset>
+			<filterset>
+				<filter token="ENVIRONMENT" value="${integration.environment}"/>
+				<filter token="APP_NAME" value="${ant.project.name}"/>
+				<filter token="APP_DOWNLOAD_URL" value="${download.url}"/>
+				<filter token="APP_MANIFEST" value="${manifest.filename}"/>	
+				<filter token="BUILD_NUMBER" value="${build.number}"/>
+			</filterset>
+			<globmapper from="*.template" to="*"/>
+		</copy>
+	</target>
+	
+	<target name="_copy-images" depends="init">
+		<copy todir="${distribution.dir}">
+			<fileset dir="${basedir}">
+				<include name="iTunesArtwork.png"/>
+				<include name="Icon.png"/>
+			</fileset>
+		</copy>
+	</target>
+
+	<target name="_archive_dsym" depends="init">
+		<zip destfile="${build.dir}/Release-iphoneos/${ant.project.name}.dSYM.zip">
+			<fileset dir="${build.dir}/Release-iphoneos/${ant.project.name}.app.dSYM">
+				<include name="**/*"/>
+			</fileset>
+		</zip>
+	</target>
+
+	<target name="_copy_symbol_file" depends="init">
+		<copy todir="${distribution.dir}">
+			<fileset dir="${build.dir}/Release-iphoneos">
+				<include name="${ant.project.name}.dSYM.zip"/>
+			</fileset>
+		</copy>
+	</target>
+	
+	<target name="prepare-distribution" depends="archive, _copy-images, _update-dist-manifest, _update-download-page">
+		
+	</target>
+
+	<target name="check-distribution-publish-dir" depends="init">
+		<condition property="distribution.publish.dir" value="true" else="false">
+			<available file="${distribution.publish.dir}" type="dir"/>
+		</condition>
+	</target>
+
+	<target name="publish-distribution" depends="init, prepare-distribution, check-distribution-publish-dir" if="distribution.publish.dir">
+
+		<copy todir="${distribution.publish.dir}">
+			<fileset dir="${distribution.dir}">
+				<include name="**/*.*"/>
+			</fileset>
+		</copy>
+	</target>
+
+	<target name="check-upload-dir-available" depends="init">
+		<condition property="upload.dir.available" value="true">
+			<and>
+				<isset property="upload.dir"/>
+			</and>
+		</condition>
+	</target>
+
+	<target name="copy-distribution" depends="init, prepare-distribution, check-upload-dir-available" if="upload.dir.available">
+		<copy todir="${upload.dir}">
+			<fileset dir="${distribution.dir}">
+				<include name="**/*.*"/>
+			</fileset>
+		</copy>
+	</target>	
+	
+	<target name="clean">
+		<delete dir="${build.dir}"/>
+		<delete>
+			<fileset dir="${basedir}">
+				<include name="*mm-rest-conf.*.backup.*"/>
+			</fileset>
+		</delete>
+	</target>
+	
+</project>

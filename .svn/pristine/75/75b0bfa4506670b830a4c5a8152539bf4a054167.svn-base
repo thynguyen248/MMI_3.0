@@ -1,0 +1,478 @@
+//
+//  InitializerViewController.m
+//  MeeMeepMobile
+//
+//  Created by Cameron McKenzie on 19/03/13.
+//
+//
+
+#import "InitializerViewController.h"
+#import "GUICommon.h"
+#import "AppDelegateMMRestClientUtils.h"
+#import "MMRestClientFactory.h"
+#import "MMRestClientFactoryImpl.h"
+#import "KeychainCredentialsManagementImpl.h"
+#import "MMConfig.h"
+
+@interface InitializerViewController (Privates)
+-(void) initializeClients;
+-(void) initializeTabs;
+-(void) loadConfiguration;
+-(NSString *) pathForFile:(NSString *) filename;
+
+@end
+
+@implementation InitializerViewController
+
+@synthesize imageView;
+@synthesize myAccessToken;
+
+-(id) initWithWindow:(UIWindow*) initWindow {
+    if(self = [super init]) {
+        window = initWindow;
+        
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(applicationDidBecomeActive)
+                                                     name:UIApplicationDidBecomeActiveNotification
+                                                   object:nil];
+    }
+    
+    return self;
+}
+
+- (void) dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    // Do any additional setup after loading the view from its nib.
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [self.navigationController setNavigationBarHidden:TRUE];
+    //Splash screen
+    UIImage* image;
+    if([GUICommon getDeviceAspectRatio] == IPHONE_5) {
+        image = [UIImage imageNamed:@"Default-568h@2x.png"];
+    } else {
+        image = [UIImage imageNamed:@"Default.png"];
+    }
+    
+    imageView.image = image;
+    
+    //Some shenanigans here to get the this view to line up properly due to the presence of the status
+    //bar. When the 'Default.png' is shown at startup, the top of it is covered by the status bar, when
+    //we render it here, it is not covered by the status bar, so we need to move it underneath the status
+    //bar and resize our image view appropriately.
+    CGRect frame = imageView.frame;
+    NSInteger statusBarHeight = [[UIApplication sharedApplication] statusBarFrame].size.height;
+    frame.origin.y = -statusBarHeight;
+    frame.size.height += statusBarHeight;
+    imageView.frame = frame;
+    
+    [super viewWillAppear:animated];
+}
+
+-(void) viewDidAppear:(BOOL)animated {
+    DLog(@"View did appear");
+    [super viewDidAppear:animated];
+    
+    [self initializeClients];
+    [self loadAccessToken];
+    [self loadCurrentUser];
+    [self loadConfiguration];
+}
+
+// This will be called when the application first loads, and also when it is restarted
+-(void) applicationDidBecomeActive {
+    //If we're not the top view controller then pop the top view controller. We already have
+    //a reference to it
+    if(self.navigationController.topViewController != self) {
+        [self.navigationController popToViewController:self animated:FALSE];
+    }
+}
+
+-(void) initializeClients {
+    //Create rest client
+    NSString *restUrl = [[AppDelegateMMRestClientUtils getMMRestConfiguration] objectForKey:@"MeeMeepRestClientURL"];
+    
+    DLog(@"Initialising MeeMeep client api with URL [%@]", restUrl);
+    id<MMRestClientFactory> factory = [[MMRestClientFactoryImpl alloc] initWithUrl:restUrl];
+    restClient = [factory createRestClient:NO];
+    
+    credentialsManagement = [[KeychainCredentialsManagementImpl alloc] init];
+}
+
+-(void) initializeTabs {
+    DLog(@"Initialize Tabs");
+    /*
+     Breakdown of approach to tabBarController
+     - The tabBarController has an array of ViewControllers (Each VC pertains to an actual tab)
+     - In our implementation each entry is infact a navigation controller that encapsulates a rootview
+     
+     The advantage of this over adding the view to the tabBarController directly is that it:
+     a). Displays the title of the current view in that tab as a caption
+     b). Populates the view NavigationController property (eg. tabRecentJobs.NavigationController) in a way that allows other views to be pushed on top of it - this property is normally nil.
+     
+     Why this is important to note:
+     [tabBarController.viewControllers objectAtIndex 0] is a navigationController(eg. navRecentJobs) containing a view (eg. tabRecentJobs).
+     */
+    
+    //Create tabs
+    //
+    tabBarController = [[UITabBarController alloc] init];
+    [tabBarController setDelegate:self];
+    
+    //Add TabBarControl (Home Screen)
+    NSMutableArray *localViewControllersArray = [[NSMutableArray alloc] init];
+    
+    tabRecentJobs = [[RecentJobsViewController alloc] initWithCommandObject:self];
+    tabRecentJobs.title = @"Recent Deliveries";
+    navRecentJobs = [[UINavigationController alloc] initWithRootViewController:tabRecentJobs];
+    navRecentJobs.tabBarItem.image = [UIImage imageNamed:@"tab_bar_recent_jobs.png"];
+    navRecentJobs.tabBarItem.title = @"Recent Jobs";    
+    
+    
+    tabMyJobs = [[MyJobsViewController alloc] initWithCommandObject:self];
+    tabMyJobs.title = @"My Deliveries";
+    navMyJobs = [[UINavigationController alloc] initWithRootViewController:tabMyJobs];
+    navMyJobs.tabBarItem.image = [UIImage imageNamed:@"tab_bar_my_jobs.png"];
+    navMyJobs.tabBarItem.title = @"My Jobs";
+    
+    tabCreateJob = [[CreateJobViewController alloc] initWithCommandObject:self];
+    tabCreateJob.title = @"Create Delivery";
+    navCreateJob = [[UINavigationController alloc] initWithRootViewController:tabCreateJob];
+    navCreateJob.tabBarItem.image = [UIImage imageNamed:@"tab_bar_new_job.png"];
+    navCreateJob.tabBarItem.title = @"Create Job";
+    
+    tabMatching = [[JobMatchingViewController alloc] initWithCommandObject:self];
+    tabMatching.title = @"My Matches";
+    navMatching= [[UINavigationController alloc] initWithRootViewController:tabMatching];
+    navMatching.tabBarItem.image = [UIImage imageNamed:@"tab_bar_matching_jobs.png"];
+    
+    
+    tabAbout = [[AboutViewController alloc] initWithCommandObject: self];
+    tabAbout.title = @"About";
+    navAbout = [[UINavigationController alloc] initWithRootViewController:tabAbout];
+    navAbout.tabBarItem.image = [UIImage imageNamed:@"tab_bar_about.png"];
+    
+    
+    [localViewControllersArray addObject:tabRecentJobs.navigationController];
+    [localViewControllersArray addObject:tabMyJobs.navigationController];
+    [localViewControllersArray addObject:tabCreateJob.navigationController];
+    [localViewControllersArray addObject:tabMatching.navigationController];
+    [localViewControllersArray addObject:tabAbout.navigationController];
+    
+    tabBarController.viewControllers = localViewControllersArray;
+    
+    //Attempt to apply visual theme
+    @try {        
+        //Change nav bar text element of navigation controllers to blue
+        [[UINavigationBar appearance] setTitleTextAttributes:
+         [NSDictionary dictionaryWithObjectsAndKeys:
+              [UIColor whiteColor],                 UITextAttributeTextColor,
+              [UIFont boldSystemFontOfSize:17.0],   UITextAttributeFont,
+          nil]];
+    }
+    @catch (NSException *exception) {
+        //
+    }
+    
+    
+    [self setShouldUpdateMyJobs:true];
+    [self setShouldUpdateRecentJobs:true];
+    [self setShouldUpdateMatchingJobs:true];    
+}
+
+-(void) pushTabViewController {
+    CATransition* transition = [CATransition animation];
+    transition.duration = 0.3;
+    transition.type = kCATransitionFade;
+    transition.subtype = kCATransitionFromTop;
+    
+    [self.navigationController.view.layer addAnimation:transition forKey:kCATransition];
+    [self.navigationController pushViewController:tabBarController animated:NO];
+}
+
+-(void) loadConfiguration {
+    @try {
+        @synchronized(self) {
+            config = [[restClient getConfigClient] getConfiguration:0];
+        }
+    } @catch (NSException *anyEx) {
+        DLog(@"Failed to retrieve configuration");
+        
+        UIAlertView *alertView = [[UIAlertView alloc] initWithTitle:@"Error" message:@"Could not connect to MeeMeep. Please check your network settings and try again." delegate:self cancelButtonTitle:nil otherButtonTitles:@"Retry", nil];
+        [alertView show];
+        return;
+    }
+    
+    if(tabBarController == nil) {
+        [self initializeTabs];
+    }
+
+    [self pushTabViewController];
+}
+
+-(void) loadCurrentUser {
+    if([self isLoggedIn]) {
+        @try {
+            myUserProfile = [[restClient getUserClient] getUserProfileForToken:myAccessToken];
+        } @catch (NSException* exception) {
+            DLog(@"Failed to retrieve user profile");
+            myUserProfile = nil;
+        }
+    }
+    else
+    {
+        myUserProfile = nil;
+    }
+}
+
+// Path to access token save data
+- (NSString *) pathForDataFile {
+    return [self pathForFile:@"Token.bin"];
+}
+
+// path the save the credentials as part of credentials management
+-(NSString *) pathForCredentialsFile {
+    return [self pathForFile:@"Credentials.bin"];
+}
+
+-(NSString *) pathForFile:(NSString *) filename {
+    NSArray*	documentDir = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    NSString*	path = nil;
+ 	
+    if (documentDir) {
+        path = [documentDir objectAtIndex:0];
+    }
+    return [NSString stringWithFormat:@"%@/%@", path, filename];
+}
+
+#pragma mark - Credentials management
+
+- (id<CredentialsManagement>) getCredentialsManagement {
+    return credentialsManagement;
+}
+
+#pragma mark - UIAlertViewDelegate
+
+- (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
+    if(buttonIndex == 0) {
+        [self performSelector:@selector(loadConfiguration) withObject:nil afterDelay:1.0];
+    }
+}
+
+#pragma mark -
+
+-(void) showTabIndex: (NSUInteger) tabIndex andPopViewToRoot: (BOOL) popToRoot{
+    [tabBarController setSelectedIndex:tabIndex];
+    [self setShouldUpdateRecentJobs:YES];
+    [self setShouldUpdateMatchingJobs:YES];
+    if (popToRoot) {
+        DLog(@"Selecting tab: [%d] and popping to root view controller", tabIndex);
+        [[tabBarController.viewControllers objectAtIndex:tabIndex] popToRootViewControllerAnimated:FALSE];
+    }
+}
+
+//________Tab Bar Delegate_________//
+
+- (void)tabBarController:(UITabBarController *)tabBarController willBeginCustomizingViewControllers:(NSArray *)viewControllers{
+    
+}
+
+- (BOOL)tabBarController:(UITabBarController *)ptabBarController shouldSelectViewController:(UIViewController *)pviewController
+{
+    
+    //Display login view controller if necessary
+    if ([pviewController.title isEqualToString:tabMyJobs.title] || [pviewController.title isEqualToString:tabMatching.title])
+    {
+        if (![self isLoggedIn])
+        {
+            [self showLoginDialog:[tabBarController.viewControllers indexOfObject:pviewController]];
+            return false;
+        }        
+    }
+    
+    return true;
+}
+
+
+
+-(void) showLoginDialog: (NSInteger) completionIndex{
+    
+    LoginViewController* loginViewController = [[LoginViewController alloc] initWithTabIndex: self tabIndex:completionIndex];
+    
+    
+    UINavigationController* loginNav = [[UINavigationController alloc] initWithRootViewController:loginViewController];
+    
+    loginViewController.modalTransitionStyle =  UIModalTransitionStyleFlipHorizontal;
+    
+    [tabBarController presentModalViewController:loginNav animated:true];
+    
+}
+
+
+-(BOOL) isLoggedIn {
+    if (myAccessToken != nil)
+    {
+        return true;
+    }
+    return false;
+}
+
+
+
+-(void) logout{
+    for (UINavigationController *controller in tabBarController.viewControllers) {
+        [controller popToRootViewControllerAnimated:YES];
+    }
+    
+    //Pop Recent Jobs and my jobs view controllers to root then display recent jobs
+    [[tabBarController.viewControllers objectAtIndex:0] popToRootViewControllerAnimated:FALSE];
+    [[tabBarController.viewControllers objectAtIndex:1] popToRootViewControllerAnimated:FALSE];
+    [self showTabIndex:0 andPopViewToRoot:FALSE];
+    
+    //Reset ijob creation page
+    [tabCreateJob resetInputFields];
+    
+    //Reset matching
+    [tabMatching resetViewController];
+    
+    //Reset myjobs
+    [tabMyJobs resetViewController];
+    
+    [self logoutWithoutPop];
+}
+
+-(void) logoutWithoutPop {
+    //Kill access token
+    self.myAccessToken = nil;
+    
+    //Tell myJobs and recent jobs to update when viewed
+    [self setShouldUpdateMyJobs:true];
+    [self setShouldUpdateMatchingJobs:true];
+    [self setShouldUpdateRecentJobs:true];
+    
+    //Delete saved file containing credentials
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    [fileManager removeItemAtPath:[self pathForDataFile] error:NULL];
+}
+
+
+-(id<MMRestClient>) getRestClient{
+    return restClient;
+}
+
+-(MMRestAccessToken*) getAccessToken{
+    return myAccessToken;
+}
+
+-(MMUserProfile*) getUserProfile {
+    return myUserProfile;
+}
+
+-(void) setUserProfile:(MMUserProfile *)userProfile {
+    myUserProfile = userProfile;
+}
+
+-(void) setAccessToken: (MMRestAccessToken*) accessToken{
+    self.myAccessToken = accessToken;
+}
+
+-(BOOL) saveAccessToken{
+    
+    if ([self getAccessToken]){
+        //Access token exists
+        NSString * path = [self pathForDataFile];
+        
+        NSMutableDictionary * rootObject;
+        rootObject = [NSMutableDictionary dictionary];
+        
+        [rootObject setValue: [self getAccessToken].userId forKey:@"userId"];
+        [rootObject setValue: [self getAccessToken].userName forKey:@"userName"];
+        [rootObject setValue: [self getAccessToken].accessToken forKey:@"accessToken"];
+        
+        //Delete saved file containing credentials
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        [fileManager removeItemAtPath:[self pathForDataFile] error:NULL];
+        
+        [NSKeyedArchiver archiveRootObject: rootObject toFile: path];
+        return true;
+    } else return false; //No access token
+}
+
+-(BOOL) loadAccessToken{
+    NSString *path = [self pathForDataFile];
+    
+    NSDictionary * rootObject;
+    rootObject = [NSKeyedUnarchiver unarchiveObjectWithFile:path];
+    
+    if (rootObject){
+        //an acccess token has been saved
+        MMRestAccessToken* accessToken = [[MMRestAccessToken alloc] init];
+        accessToken.userId = [rootObject valueForKey:@"userId"];
+        accessToken.userName = [rootObject valueForKey:@"userName"];
+        accessToken.accessToken = [rootObject valueForKey:@"accessToken"];
+        [self setAccessToken:accessToken];
+        return true;
+    } else return false; //No saved token
+}
+
+-(UIViewController*) getRootViewController{
+    return tabBarController;
+}
+
+-(UIWindow*) getWindow{
+    return window;
+}
+
+-(BOOL) getShouldUpdateRecentJobs{
+    return shouldUpdateRecentJobs;
+}
+
+-(BOOL) getShouldUpdateMatchingJobs{
+    return shouldUpdateMatchingJobs;
+}
+
+-(BOOL) getShouldUpdateMyJobs{
+    return shouldUpdateMyJobs;
+}
+
+-(BOOL) getShouldUpdateJobDetail{
+    return shouldUpdateJobDetail;
+}
+
+-(BOOL) getShouldUpdateBids{
+    return shouldUpdateBids;
+}
+
+-(void) setShouldUpdateRecentJobs: (BOOL) updateJobs{
+    shouldUpdateRecentJobs = updateJobs;
+}
+
+-(void) setShouldUpdateMatchingJobs: (BOOL) updateJobs{
+    shouldUpdateMatchingJobs = updateJobs;
+}
+
+-(void) setShouldUpdateMyJobs: (BOOL) updateJobs{
+    shouldUpdateMyJobs = updateJobs;
+}
+
+-(void) setShouldUpdateJobDetail: (BOOL) updateDetail{
+    shouldUpdateJobDetail = updateDetail;
+}
+
+-(void) setShouldUpdateBids: (BOOL) updateBids{
+    shouldUpdateBids = updateBids;
+}
+
+-(MMConfig*) getConfig {
+    @synchronized(self) {
+        return config;
+    }
+}
+
+@end

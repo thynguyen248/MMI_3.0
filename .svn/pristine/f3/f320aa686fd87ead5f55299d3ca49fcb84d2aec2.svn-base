@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Scheme
+   LastUpgradeVersion = "0460"
+   version = "1.7">
+   <BuildAction
+      parallelizeBuildables = "NO"
+      buildImplicitDependencies = "YES">
+      <BuildActionEntries>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0501FEE114F6F718007EBD63"
+               BuildableName = "MeeMeepMobile.app"
+               BlueprintName = "MeeMeepMobile"
+               ReferencedContainer = "container:MeeMeepMobile.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0575B51014F6FD4F00B1EDFC"
+               BuildableName = "MeeMeepLogicUnitTests.octest"
+               BlueprintName = "MeeMeepLogicUnitTests"
+               ReferencedContainer = "container:MeeMeepMobile.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+      </BuildActionEntries>
+   </BuildAction>
+   <TestAction
+      selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
+      selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+      shouldUseLaunchSchemeArgsEnv = "YES"
+      buildConfiguration = "Debug">
+      <Testables>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0575B51014F6FD4F00B1EDFC"
+               BuildableName = "MeeMeepLogicUnitTests.octest"
+               BlueprintName = "MeeMeepLogicUnitTests"
+               ReferencedContainer = "container:MeeMeepMobile.xcodeproj">
+            </BuildableReference>
+            <SkippedTests>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testAcceptBid">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testAcceptBidViaTxMock">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testLogoutViaApi">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetUserJobsViaTxMock">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetRecentJobsViaTxMock">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetJob124DetailAndBid246ViaTxMock">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testCreateJobViaApiAllNull">
+               </Test>
+               <Test
+                  Identifier = "QHttpOperationLogicUnitTest">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetJobDetailForJob202ViaAPILoggedIn">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testAcceptBidViaApi">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testCreateJobViaApi">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testCreateJobViaTxMockBidsAcceptable">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetRecentJobsAndLinkedFirstJobViaApi">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetMyJobsWithUserLoggedIn">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetLoginTokenViaApi">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetLoginTokenViaTxMock">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetLoginTokenAndGetUserJobsSummaryViaApi">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetJobDetailForJob202ViaAPINotLoggedIn">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetJobDetailForJob148ViaAPILoggedIn">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetBidSummaryListForJobIdViaApi">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetBidDetailViaApi">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetUserProfileForNeo">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testJobSearchBidOnByMe">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testJobSearchCreatedByMe">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testJobSearchJobsCreatedByMeLimitedSet">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testJobSearchWonByMohammad">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testJobSearchOpenJobsCreatedByMe">
+               </Test>
+               <Test
+                  Identifier = "MMCompleteJobAsyncActivityLogicUnitTest">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepBidSummarySortingLogicUnitTest">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepRestClientLogicUnitTest/testGetUserComms">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepBidSummaryResponseIntegrationUnitTest">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepJobDetailResponseIntegrationUnitTest">
+               </Test>
+               <Test
+                  Identifier = "MMRetrieveBidDetailAsyncActivityLogicUnitTest">
+               </Test>
+               <Test
+                  Identifier = "MMRetrieveBidSummaryListActivityLogicUnitTest">
+               </Test>
+               <Test
+                  Identifier = "MMRetrieveUserJobsAsyncActivityLogicUnitTest">
+               </Test>
+               <Test
+                  Identifier = "MeeMeepJobExpiryLogicUnitTest">
+               </Test>
+            </SkippedTests>
+            <LocationScenarioReference
+               identifier = "com.apple.dt.IDEFoundation.CurrentLocationScenarioIdentifier"
+               referenceType = "1">
+            </LocationScenarioReference>
+         </TestableReference>
+      </Testables>
+   </TestAction>
+   <LaunchAction
+      selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
+      selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+      launchStyle = "0"
+      useCustomWorkingDirectory = "NO"
+      buildConfiguration = "Debug"
+      ignoresPersistentStateOnLaunch = "NO"
+      debugDocumentVersioning = "YES"
+      allowLocationSimulation = "YES">
+      <AdditionalOptions>
+      </AdditionalOptions>
+   </LaunchAction>
+   <ProfileAction
+      shouldUseLaunchSchemeArgsEnv = "YES"
+      savedToolIdentifier = ""
+      useCustomWorkingDirectory = "NO"
+      buildConfiguration = "Release"
+      debugDocumentVersioning = "YES">
+   </ProfileAction>
+   <AnalyzeAction
+      buildConfiguration = "Debug">
+   </AnalyzeAction>
+   <ArchiveAction
+      buildConfiguration = "Release"
+      revealArchiveInOrganizer = "YES">
+   </ArchiveAction>
+</Scheme>
